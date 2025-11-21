@@ -1,6 +1,12 @@
-﻿name:PA2_local
-channels: [conda-forge]
+﻿name: PA2_local
+channels: 
+  - conda-forge
+  - defaults
 dependencies: 
--python=3.12
--jupyterlab
--pip
+  - python=3.11
+  - pip
+  - tensorflow
+  - rasterio
+  - numpy
+  - matplotlib
+
