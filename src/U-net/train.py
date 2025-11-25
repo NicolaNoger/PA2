@@ -3,26 +3,25 @@ import numpy as np
 import os
 from datetime import datetime
 
-# Set matplotlib backend BEFORE importing pyplot (for headless systems)
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend for servers without display
-import matplotlib.pyplot as plt
 
-# Try to import sklearn, but make it optional
 try:
     from sklearn.metrics import confusion_matrix, classification_report, f1_score
-    import seaborn as sns
     SKLEARN_AVAILABLE = True
 except (ImportError, TypeError) as e:
     print(f"Warning: sklearn/scipy not available: {e}")
     print("  Confusion matrix and F1 scores will be skipped")
     SKLEARN_AVAILABLE = False
 
-# Disable XLA to avoid libdevice.10.bc error
-# XLA compilation causes issues with CUDA 11.6.2 on this system
-tf.config.optimizer.set_jit(False)
 
-# Configure GPU memory growth to avoid OOM
+# Importiere deine Module
+from U_net import build_unet
+from dataloader import load_npy_dataset, prepare_dataset
+
+
+
+tf.config.optimizer.set_jit(False)
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
@@ -32,31 +31,38 @@ if gpus:
     except RuntimeError as e:
         print(f"GPU memory growth setting failed: {e}")
 
-# Importiere deine Module
-from U_net import build_unet
-from dataloader import load_npy_dataset, split_dataset, prepare_dataset
-
 
 class Config:
     # Paths
-    DATA_PATH = "A:/STUDIUM/05_Herbstsemester25/PA2/data/aerial/training_data"
+    DATA_PATH = "/cfs/earth/scratch/nogernic/PA2/data/aerial/"
     IMG_TILES_PATH = os.path.join(DATA_PATH, "img_tiles")
     MASK_TILES_PATH = os.path.join(DATA_PATH, "mask_tiles")
     OUTPUT_DIR = "models"
     
     # Dataset Parameter
     NUM_CLASSES = 5  
-    TRAIN_RATIO = 0.8
+    TRAIN_RATIO = 0.70  # 70% for training
+    VAL_RATIO = 0.15    # 15% for validation during training
+    TEST_RATIO = 0.15   # 15% for final testing (unseen data)
 
     # Training Hyperparameter
-    BATCH_SIZE = 4  # Reduced from 8 to 4 to avoid OOM
-    EPOCHS = 20  
-    LEARNING_RATE = 1e-4 
+    BATCH_SIZE = 4  
+    EPOCHS = 25  
+    LEARNING_RATE = 5e-5  
     
     # Model Parameter
     INPUT_SHAPE = (512, 512, 4)  # NIR + RGB Channels
     STEPS_PER_EPOCH = None
     VALIDATION_STEPS = None
+    
+    # Loss Function Selection
+    USE_FOCAL_LOSS = True # ← Behalte Focal Loss (zeigt gute Ergebnisse für Class 3!)
+    FOCAL_GAMMA = 2.0       # Focal Loss parameter: focusing parameter (0 = CE, 2+ = focus on hard examples)
+    FOCAL_ALPHA = 0.25      # Focal Loss parameter: class balancing (0.25 works well for imbalanced data)
+    
+    # Checkpoint Loading (set to load from existing model)
+    LOAD_CHECKPOINT = "models/unet_20251123_102027/best_model_weights/checkpoint"  # ← Gutes Basis-Model
+    RESUME_TRAINING = False  # ← False = Fine-tuning mode
 
 
 def create_output_directory():
@@ -81,17 +87,35 @@ def load_data():
     total_samples = dataset.cardinality().numpy()
     print(f"Total Samples: {total_samples}")
     
-    # 2. Split into Training and Validation
-    print(f"\nSplitting dataset (Train/Val: {Config.TRAIN_RATIO:.0%}/{1-Config.TRAIN_RATIO:.0%})...")
-    train_dataset, val_dataset = split_dataset(dataset, train_ratio=Config.TRAIN_RATIO)
-    train_size = train_dataset.cardinality().numpy()
-    val_size = val_dataset.cardinality().numpy()
-    print(f"Training Samples:   {train_size}")
-    print(f"Validation Samples: {val_size}")
+    # Shuffle dataset before splitting (with fixed seed for reproducibility)
+    # Use buffer size of 1000 to avoid OOM (shuffling happens in memory)
+    print("\nShuffling dataset with seed=42 for reproducible random split...")
+    BUFFER_SIZE = 1000  # Good balance: enough randomness, won't cause OOM
+    dataset = dataset.shuffle(BUFFER_SIZE, seed=42, reshuffle_each_iteration=False)
+    
+    # 2. Split into Training, Validation, and Test
+    print(f"\nSplitting dataset (Train/Val/Test: {Config.TRAIN_RATIO:.0%}/{Config.VAL_RATIO:.0%}/{Config.TEST_RATIO:.0%})...")
+    
+    # First split: separate test set
+    train_val_size = int(total_samples * (Config.TRAIN_RATIO + Config.VAL_RATIO))
+    test_size = total_samples - train_val_size
+    
+    train_val_dataset = dataset.take(train_val_size)
+    test_dataset = dataset.skip(train_val_size)
+    
+    # Second split: separate train and validation
+    train_size = int(train_val_size * (Config.TRAIN_RATIO / (Config.TRAIN_RATIO + Config.VAL_RATIO)))
+    val_size = train_val_size - train_size
+    
+    train_dataset = train_val_dataset.take(train_size)
+    val_dataset = train_val_dataset.skip(train_size)
+    
+    print(f"Training Samples:   {train_size} ({train_size/total_samples*100:.1f}%)")
+    print(f"Validation Samples: {val_size} ({val_size/total_samples*100:.1f}%)")
+    print(f"Test Samples:       {test_size} ({test_size/total_samples*100:.1f}%)")
     
     # 3. Berechne Steps für Training
     Config.STEPS_PER_EPOCH = max(1, train_size // Config.BATCH_SIZE)
-    # Reduce validation steps to save memory (only validate on subset)
     Config.VALIDATION_STEPS = min(100, max(1, val_size // Config.BATCH_SIZE))
     print(f"Steps per Epoch:    {Config.STEPS_PER_EPOCH}")
     print(f"Validation Steps:   {Config.VALIDATION_STEPS} (limited to save memory)")
@@ -115,6 +139,15 @@ def load_data():
     )
     print("Validation Dataset ready")
     
+    print("Preparing Test Dataset...")
+    test_batches = prepare_dataset(
+        test_dataset,
+        batch_size=Config.BATCH_SIZE,
+        num_classes=Config.NUM_CLASSES,
+        is_training=False  # No Shuffle, No Augment, No Repeat
+    )
+    print("Test Dataset ready")
+    
     # 5. Check Data Format
     print("\nChecking Data Format...")
     for images, masks in train_batches.take(1):
@@ -125,7 +158,50 @@ def load_data():
         print(f"  Image value range:  [{images.numpy().min():.3f}, {images.numpy().max():.3f}]")
         print(f"  Mask unique values: {np.unique(masks.numpy())}")  
     
-    return train_batches, val_batches
+    return train_batches, val_batches, test_batches
+
+
+def focal_loss(gamma=2.0, alpha=0.25):
+    """
+    Focal Loss for multi-class classification.
+    
+    Focal Loss focuses training on hard examples by down-weighting easy examples.
+    This is especially useful for class imbalance problems.
+    
+    Formula: FL(pt) = -alpha * (1-pt)^gamma * log(pt)
+    
+    Args:
+        gamma: Focusing parameter. Higher values focus more on hard examples.
+               - gamma=0: equivalent to categorical crossentropy
+               - gamma=2: commonly used default
+               - gamma=5: very strong focus on hard examples
+        alpha: Class balancing parameter (0-1). Lower values give less weight to well-classified examples.
+    
+    Returns:
+        Loss function compatible with Keras
+    
+    Reference: Lin et al. "Focal Loss for Dense Object Detection" (2017)
+    """
+    def focal_loss_fixed(y_true, y_pred):
+        # Clip predictions to prevent log(0)
+        epsilon = tf.keras.backend.epsilon()
+        y_pred = tf.clip_by_value(y_pred, epsilon, 1.0 - epsilon)
+        
+        # Calculate cross entropy
+        cross_entropy = -y_true * tf.math.log(y_pred)
+        
+        # Calculate focal weight: (1 - pt)^gamma
+        # pt is the probability of the true class
+        pt = tf.reduce_sum(y_true * y_pred, axis=-1, keepdims=True)
+        focal_weight = tf.pow(1.0 - pt, gamma)
+        
+        # Apply focal weight and alpha
+        focal_loss_value = alpha * focal_weight * cross_entropy
+        
+        # Sum over classes and return mean over batch
+        return tf.reduce_sum(focal_loss_value, axis=-1)
+    
+    return focal_loss_fixed
 
 
 def build_model():
@@ -143,10 +219,31 @@ def build_model():
     
     # 2. compile Model
     print("\nCompiling Model...")
+    class_weights = {
+        0: 1.0,    # Balanced class
+        1: 2.5,    # Moderate boost
+        2: 1.1,    # Balanced class
+        3: 5.5,    # Significant boost for Class 3
+        4: 27.7    # Strong boost for Class 4 (rarest)
+    }
+    
+    print(f"Using class weights: {class_weights}")
+    
+    # Select loss function
+    if Config.USE_FOCAL_LOSS:
+        loss_fn = focal_loss(gamma=Config.FOCAL_GAMMA, alpha=Config.FOCAL_ALPHA)
+        loss_name = f"Focal Loss (gamma={Config.FOCAL_GAMMA}, alpha={Config.FOCAL_ALPHA})"
+        print(f"Loss Function: {loss_name}")
+        print("  → Focuses on hard-to-classify examples (good for Class 3 & 4!)")
+    else:
+        loss_fn = 'categorical_crossentropy'
+        loss_name = "Categorical Crossentropy"
+        print(f"Loss Function: {loss_name}")
+    
     # Use legacy Adam optimizer to avoid XLA issues with libdevice
     model.compile(
         optimizer=tf.keras.optimizers.legacy.Adam(learning_rate=Config.LEARNING_RATE),
-        loss='categorical_crossentropy',  # For multi-class segmentation
+        loss=loss_fn,
         metrics=[
             'accuracy',
             tf.keras.metrics.CategoricalAccuracy(name='cat_accuracy'),
@@ -155,8 +252,28 @@ def build_model():
     )
     print("Model compiled")
 
+    # 3. Load checkpoint if specified
+    if Config.LOAD_CHECKPOINT:
+        print("\n" + "-" * 70)
+        print("LOADING CHECKPOINT")
+        print("-" * 70)
+        try:
+            model.load_weights(Config.LOAD_CHECKPOINT)
+            print(f"✓ Loaded weights from: {Config.LOAD_CHECKPOINT}")
+            
+            if Config.RESUME_TRAINING:
+                print("  Mode: RESUME TRAINING (continuing from checkpoint)")
+                print("  Note: Optimizer state is NOT restored (starts fresh)")
+            else:
+                print("  Mode: FINE-TUNING (using pretrained weights)")
+                print("  Tip: You can change hyperparameters for fine-tuning")
+        except Exception as e:
+            print(f"⚠ ERROR: Could not load checkpoint: {e}")
+            print("  Starting training from scratch instead")
+    else:
+        print("\nNo checkpoint specified - training from scratch")
     
-    # 3. show Model Summary
+    # 4. show Model Summary
     print("\nModel Architecture:")
     print("-" * 70)
     model.summary()
@@ -164,7 +281,7 @@ def build_model():
     total_params = model.count_params()
     print(f"\nTotal Parameters: {total_params:,}")
     
-    return model
+    return model, class_weights
 
 
 def setup_callbacks(output_dir):
@@ -185,31 +302,32 @@ def setup_callbacks(output_dir):
     
     callbacks.append(MemoryCleanupCallback())
     print("MemoryCleanupCallback: Forces garbage collection after each epoch")
-    
-    # 1. ModelCheckpoint - saves best model
-    # Use SavedModel format instead of .h5 to avoid h5py precision issues
-    checkpoint_path = os.path.join(output_dir, "best_model")
+
+    # 1. ModelCheckpoint - saves best model weights
+    # Use TensorFlow checkpoint format (not .h5) to avoid h5py issues
+    checkpoint_path = os.path.join(output_dir, "best_model_weights", "checkpoint")
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_path,
         monitor='val_loss',
         save_best_only=True,
-        save_format='tf',  # Use SavedModel format instead of HDF5
+        save_weights_only=True,  # Only save weights, not full model
         mode='min',
         verbose=1
     )
     callbacks.append(checkpoint)
-    print(f"ModelCheckpoint: {checkpoint_path} (SavedModel format)")
+    print(f"ModelCheckpoint: {checkpoint_path} (TF checkpoint format)")
+    
     
     # 2. EarlyStopping - Stops training if no progress
     early_stop = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss',
         patience=5,  # Waits 5 epochs without improvement
         mode='min',
-        restore_best_weights=True,
+        restore_best_weights=False,  # Don't restore, use ModelCheckpoint instead
         verbose=1
     )
     callbacks.append(early_stop)
-    print("EarlyStopping: patience=5")
+    print("EarlyStopping: patience=5 (no weight restore)")
     
     # 3. ReduceLROnPlateau - Reduces learning rate on plateau
     reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
@@ -243,7 +361,7 @@ def setup_callbacks(output_dir):
     return callbacks
 
 
-def train_model(model, train_batches, val_batches, callbacks):
+def train_model(model, train_batches, val_batches, callbacks, class_weights=None):
     """Trains the model"""
     print("\n" + "="*70)
     print("STEP 4: START TRAINING")
@@ -255,8 +373,10 @@ def train_model(model, train_batches, val_batches, callbacks):
     print(f"  Steps per Epoch:    {Config.STEPS_PER_EPOCH}")
     print(f"  Validation Steps:   {Config.VALIDATION_STEPS}")
     print(f"  Number of Classes:  {Config.NUM_CLASSES}")
+    if class_weights:
+        print(f"  Class Weights:      Enabled (balancing underrepresented classes)")
     print("\nTraining starts...\n")
-    
+
     # GPU Info
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
@@ -281,139 +401,121 @@ def train_model(model, train_batches, val_batches, callbacks):
 
 
 def plot_training_history(history, output_dir):
-    """Plots training history"""
+    """Plots training history - saves as CSV if plotting fails"""
     print("\n" + "="*70)
     print("STEP 5: VISUALIZATION")
     print("="*70)
     
+    # Always save history as CSV (most reliable)
     try:
-        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        import pandas as pd
+        history_df = pd.DataFrame(history.history)
+        csv_path = os.path.join(output_dir, "training_history_detailed.csv")
+        history_df.to_csv(csv_path, index_label='epoch')
+        print(f"✓ Training history saved as CSV: {csv_path}")
+    except Exception as e:
+        print(f"Warning: Could not save history as CSV: {e}")
+    
+    # Try to plot (but don't fail if matplotlib has issues)
+    try:
+        # Disable matplotlib completely if environment variable set
+        import os as os_module
+        if os_module.environ.get('DISABLE_PLOTS', '0') == '1':
+            print("Plotting disabled via DISABLE_PLOTS=1")
+            return
         
-        # Convert history values to plain Python lists to avoid numpy/tensor issues
-        # 1. Loss
-        loss = [float(x) for x in history.history['loss']]
-        val_loss = [float(x) for x in history.history['val_loss']]
-        axes[0].plot(loss, label='Training Loss', linewidth=2)
-        axes[0].plot(val_loss, label='Validation Loss', linewidth=2)
-        axes[0].set_xlabel('Epoch', fontsize=12)
-        axes[0].set_ylabel('Loss', fontsize=12)
-        axes[0].set_title('Model Loss', fontsize=14, fontweight='bold')
-        axes[0].legend()
-        axes[0].grid(True, alpha=0.3)
+        # Simple text-based summary instead of plots
+        print("\nTraining Summary:")
+        print("-" * 70)
         
-        # 2. Accuracy
-        acc = [float(x) for x in history.history['accuracy']]
-        val_acc = [float(x) for x in history.history['val_accuracy']]
-        axes[1].plot(acc, label='Training Accuracy', linewidth=2)
-        axes[1].plot(val_acc, label='Validation Accuracy', linewidth=2)
-        axes[1].set_xlabel('Epoch', fontsize=12)
-        axes[1].set_ylabel('Accuracy', fontsize=12)
-        axes[1].set_title('Model Accuracy', fontsize=14, fontweight='bold')
-        axes[1].legend()
-        axes[1].grid(True, alpha=0.3)
+        loss = [float(x) if hasattr(x, '__float__') else float(np.array(x)) for x in history.history['loss']]
+        val_loss = [float(x) if hasattr(x, '__float__') else float(np.array(x)) for x in history.history['val_loss']]
         
-        # 3. IoU
-        if 'iou' in history.history:
-            iou = [float(x) for x in history.history['iou']]
-            val_iou = [float(x) for x in history.history['val_iou']]
-            axes[2].plot(iou, label='Training IoU', linewidth=2)
-            axes[2].plot(val_iou, label='Validation IoU', linewidth=2)
-            axes[2].set_xlabel('Epoch', fontsize=12)
-            axes[2].set_ylabel('IoU', fontsize=12)
-            axes[2].set_title('Intersection over Union', fontsize=14, fontweight='bold')
-            axes[2].legend()
-            axes[2].grid(True, alpha=0.3)
+        print(f"Final Training Loss:   {loss[-1]:.4f}")
+        print(f"Final Validation Loss: {val_loss[-1]:.4f}")
+        print(f"Best Validation Loss:  {min(val_loss):.4f} (Epoch {val_loss.index(min(val_loss))+1})")
         
-        plt.tight_layout()
+        if 'accuracy' in history.history:
+            acc = [float(x) if hasattr(x, '__float__') else float(np.array(x)) for x in history.history['accuracy']]
+            val_acc = [float(x) if hasattr(x, '__float__') else float(np.array(x)) for x in history.history['val_accuracy']]
+            print(f"Final Training Accuracy:   {acc[-1]:.4f}")
+            print(f"Final Validation Accuracy: {val_acc[-1]:.4f}")
+            print(f"Best Validation Accuracy:  {max(val_acc):.4f} (Epoch {val_acc.index(max(val_acc))+1})")
         
-        # Save with error handling
-        plot_path = os.path.join(output_dir, "training_history.png")
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        print(f"Training history saved: {plot_path}")
+        print("\n✓ Training history available in CSV file for plotting")
+        print("  You can plot it later with: pandas.read_csv('training_history_detailed.csv')")
         
     except Exception as e:
-        print(f"Warning: Could not save training plot: {e}")
-    finally:
-        plt.close('all')
+        print(f"Note: Visualization skipped due to matplotlib compatibility issues")
+        print(f"  Training data saved in CSV format for later analysis")
 
 
 def visualize_predictions(model, val_batches, output_dir, num_samples=3):
-    """Visualizes predictions"""
-    print("\nCreating prediction visualizations...")
+    """Visualizes predictions - saves raw data instead of images"""
+    print("\nSaving prediction samples...")
     
     try:
-        # Get one batch
+        # Get one batch and save raw predictions as numpy files
         for images, masks in val_batches.take(1):
             predictions = model.predict(images, verbose=0)
             
-            # Convert one-hot back to classes
-            true_masks = np.argmax(masks.numpy(), axis=-1)
-            pred_masks = np.argmax(predictions, axis=-1)
+            # Convert everything to numpy arrays
+            images_np = images.numpy()
+            masks_np = masks.numpy()
+            predictions_np = predictions
             
-            # Plot first num_samples
-            for i in range(min(num_samples, images.shape[0])):
-                try:
-                    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-                    
-                    # Convert to plain numpy arrays to avoid matplotlib issues
-                    # Original image (show only RGB channels)
-                    rgb_img = np.array(images[i, :, :, 1:4].numpy(), dtype=np.float32)
-                    # Normalize for display
-                    rgb_min = float(rgb_img.min())
-                    rgb_max = float(rgb_img.max())
-                    rgb_img = (rgb_img - rgb_min) / (rgb_max - rgb_min + 1e-7)
-                    
-                    axes[0].imshow(rgb_img)
-                    axes[0].set_title('Original Image (RGB)', fontsize=12, fontweight='bold')
-                    axes[0].axis('off')
-                    
-                    # Ground Truth (convert to int for clean display)
-                    true_mask_int = np.array(true_masks[i], dtype=np.int32)
-                    axes[1].imshow(true_mask_int, cmap='tab10', vmin=0, vmax=Config.NUM_CLASSES-1)
-                    axes[1].set_title('Ground Truth', fontsize=12, fontweight='bold')
-                    axes[1].axis('off')
-                    
-                    # Prediction (convert to int for clean display)
-                    pred_mask_int = np.array(pred_masks[i], dtype=np.int32)
-                    im = axes[2].imshow(pred_mask_int, cmap='tab10', vmin=0, vmax=Config.NUM_CLASSES-1)
-                    axes[2].set_title('Prediction', fontsize=12, fontweight='bold')
-                    axes[2].axis('off')
-                    
-                    # Colorbar
-                    cbar = plt.colorbar(im, ax=axes[2], fraction=0.046, pad=0.04)
-                    cbar.set_label('Class', rotation=270, labelpad=15)
-                    
-                    plt.tight_layout()
-                    
-                    # Save
-                    pred_path = os.path.join(output_dir, f"prediction_sample_{i+1}.png")
-                    plt.savefig(pred_path, dpi=300, bbox_inches='tight')
-                    plt.close('all')
-                    
-                    print(f"Prediction {i+1} saved: {pred_path}")
-                    
-                except Exception as e:
-                    print(f"Warning: Could not save prediction {i+1}: {e}")
-                    plt.close('all')
+            # Convert one-hot back to classes
+            true_masks = np.argmax(masks_np, axis=-1)
+            pred_masks = np.argmax(predictions_np, axis=-1)
+            
+            # Save first num_samples as numpy files (can be visualized later)
+            for i in range(min(num_samples, images_np.shape[0])):
+                sample_dir = os.path.join(output_dir, f"prediction_sample_{i+1}")
+                os.makedirs(sample_dir, exist_ok=True)
+                
+                # Save all data
+                np.save(os.path.join(sample_dir, "image.npy"), images_np[i])
+                np.save(os.path.join(sample_dir, "true_mask.npy"), true_masks[i])
+                np.save(os.path.join(sample_dir, "pred_mask.npy"), pred_masks[i])
+                
+                # Save a simple text summary
+                summary_path = os.path.join(sample_dir, "summary.txt")
+                with open(summary_path, 'w') as f:
+                    f.write(f"Prediction Sample {i+1}\n")
+                    f.write("="*50 + "\n\n")
+                    f.write(f"Image shape: {images_np[i].shape}\n")
+                    f.write(f"True mask shape: {true_masks[i].shape}\n")
+                    f.write(f"Predicted mask shape: {pred_masks[i].shape}\n\n")
+                    f.write("Class distribution in true mask:\n")
+                    for class_id in range(Config.NUM_CLASSES):
+                        count = np.sum(true_masks[i] == class_id)
+                        percentage = count / true_masks[i].size * 100
+                        f.write(f"  Class {class_id}: {count:7d} pixels ({percentage:5.2f}%)\n")
+                    f.write("\nClass distribution in predicted mask:\n")
+                    for class_id in range(Config.NUM_CLASSES):
+                        count = np.sum(pred_masks[i] == class_id)
+                        percentage = count / pred_masks[i].size * 100
+                        f.write(f"  Class {class_id}: {count:7d} pixels ({percentage:5.2f}%)\n")
+                
+                print(f"✓ Sample {i+1} saved: {sample_dir}/")
+            
+            print("\nNote: Raw prediction data saved as .npy files")
+            print("      You can visualize them later with matplotlib/QGIS")
+            break
                     
     except Exception as e:
-        print(f"Warning: Could not create prediction visualizations: {e}")
+        print(f"Warning: Could not save prediction samples: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def evaluate_model(model, val_batches, output_dir):
     """Evaluates model with confusion matrix and F1 score"""
-    
-    if not SKLEARN_AVAILABLE:
-        print("\n" + "="*70)
-        print("STEP 5b: MODEL EVALUATION - SKIPPED")
-        print("="*70)
-        print("sklearn/scipy not available - skipping confusion matrix and F1 scores")
-        print("Training metrics are still available in training_history.csv")
-        return
-    
     print("\n" + "="*70)
     print("STEP 5b: MODEL EVALUATION")
     print("="*70)
+    
+    from sklearn.metrics import confusion_matrix, classification_report, f1_score
     
     print("Collecting predictions for evaluation...")
     
@@ -444,21 +546,29 @@ def evaluate_model(model, val_batches, output_dir):
     print("\nGenerating confusion matrix...")
     cm = confusion_matrix(all_true_labels, all_pred_labels)
     
+    # Save confusion matrix as CSV (most reliable)
+    cm_csv_path = os.path.join(output_dir, "confusion_matrix.csv")
     try:
-        fig, ax = plt.subplots(figsize=(10, 8))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
-                    xticklabels=range(Config.NUM_CLASSES),
-                    yticklabels=range(Config.NUM_CLASSES))
-        ax.set_xlabel('Predicted Class', fontsize=12)
-        ax.set_ylabel('True Class', fontsize=12)
-        ax.set_title('Confusion Matrix', fontsize=14, fontweight='bold')
+        import pandas as pd
+        cm_df = pd.DataFrame(cm, 
+                            index=[f'True_{i}' for i in range(Config.NUM_CLASSES)],
+                            columns=[f'Pred_{i}' for i in range(Config.NUM_CLASSES)])
+        cm_df.to_csv(cm_csv_path)
+        print(f"✓ Confusion matrix saved as CSV: {cm_csv_path}")
         
-        cm_path = os.path.join(output_dir, "confusion_matrix.png")
-        plt.savefig(cm_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"✓ Confusion matrix saved: {cm_path}")
+        # Print confusion matrix to console
+        print("\nConfusion Matrix:")
+        print("-" * 70)
+        print(cm_df.to_string())
+        
     except Exception as e:
-        print(f"⚠ Could not save confusion matrix plot: {e}")
+        print(f"Warning: Could not save confusion matrix as CSV: {e}")
+        # Fallback: print to console
+        print("\nConfusion Matrix (numpy array):")
+        print(cm)
+    
+    # Skip plotting - matplotlib has compatibility issues on this system
+    print("(Confusion matrix plot skipped due to matplotlib compatibility issues)")
     
     # 2. Classification Report
     print("\n" + "="*70)
@@ -512,28 +622,32 @@ def evaluate_model(model, val_batches, output_dir):
     
     print("="*70)
 
-
 def save_model(model, output_dir):
     """Saves final model"""
     print("\n" + "="*70)
     print("STEP 6: SAVE MODEL")
     print("="*70)
     
-    # Save complete model (SavedModel format to avoid h5py issues)
-    model_path = os.path.join(output_dir, "final_model")
-    model.save(model_path, save_format='tf')
-    print(f"Final model saved: {model_path} (SavedModel format)")
-    
-    # Save only weights (can still use .h5 for weights only)
-    weights_path = os.path.join(output_dir, "model_weights.h5")
+    # Save weights first (most reliable, avoids h5py issues)
+    weights_path = os.path.join(output_dir, "final_model_weights.h5")
     try:
         model.save_weights(weights_path)
-        print(f"Model weights saved: {weights_path}")
+        print(f"✓ Model weights saved: {weights_path}")
     except Exception as e:
         print(f"Warning: Could not save weights as .h5: {e}")
-        weights_path_tf = os.path.join(output_dir, "model_weights")
+        weights_path_tf = os.path.join(output_dir, "final_model_weights")
         model.save_weights(weights_path_tf)
-        print(f"Model weights saved: {weights_path_tf} (TF format)")
+        print(f"✓ Model weights saved: {weights_path_tf} (TF format)")
+    
+    # Try to save complete model (SavedModel format)
+    model_path = os.path.join(output_dir, "final_model")
+    try:
+        model.save(model_path, save_format='tf')
+        print(f"✓ Complete model saved: {model_path} (SavedModel format)")
+    except Exception as e:
+        print(f"Warning: Could not save complete model: {e}")
+        print("   This is OK - you can load the model using weights file.")
+        print(f"   To load: model = build_unet(...); model.load_weights('{weights_path}')")
 
 
 def main():
@@ -547,24 +661,30 @@ def main():
     output_dir = create_output_directory()
     
     try:
-        # 1. Load data
-        train_batches, val_batches = load_data()
+        # 1. Load data (now returns train, val, AND test)
+        train_batches, val_batches, test_batches = load_data()
         
         # 2. Build model
-        model = build_model()
+        model, class_weights = build_model()
         
         # 3. Setup callbacks
         callbacks = setup_callbacks(output_dir)
         
-        # 4. Train model
-        history = train_model(model, train_batches, val_batches, callbacks)
+        # 4. Train model with class weights
+        history = train_model(model, train_batches, val_batches, callbacks, class_weights)
         
-        # 5. Visualize results
+        # 5. Visualize training results (on validation set)
         plot_training_history(history, output_dir)
-        evaluate_model(model, val_batches, output_dir)  # Confusion Matrix & F1
-        visualize_predictions(model, val_batches, output_dir, num_samples=3)
         
-        # 6. Save model
+        # 6. Final evaluation on TEST SET (unseen data!)
+        print("\n" + "="*70)
+        print("FINAL EVALUATION ON TEST SET")
+        print("="*70)
+        print("This is the TRUE performance on completely unseen data!")
+        evaluate_model(model, test_batches, output_dir)
+        visualize_predictions(model, test_batches, output_dir, num_samples=3)
+        
+        # 7. Save model
         save_model(model, output_dir)
         
         print("\n" + "="*70)

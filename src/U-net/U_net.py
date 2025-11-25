@@ -14,7 +14,7 @@ def create_mobilenet_encoder(input_shape=(512, 512, 4), trainable=False):
     """
     Creates MobileNetV2-based encoder for U-Net.
     
-    SIMPLE APPROACH: Builds a standalone MobileNetV2 for 4 channels,
+    Builds a standalone MobileNetV2 for 4 channels,
     then loads pre-trained weights where possible (first 3 channels).
     
     Args:
@@ -94,10 +94,9 @@ def create_mobilenet_encoder(input_shape=(512, 512, 4), trainable=False):
         print(f"✓ Successfully transferred weights from {transferred} layers")
         
     except Exception as e:
-        print(f"⚠ Warning: Could not load ImageNet weights: {e}")
+        print(f"  Warning: Could not load ImageNet weights: {e}")
         print("  Training from scratch (random initialization)")
-        print("  This may take longer but should still work!")
-    
+
     return tf.keras.Model(inputs=inp, outputs=skip_outputs)
 
 
