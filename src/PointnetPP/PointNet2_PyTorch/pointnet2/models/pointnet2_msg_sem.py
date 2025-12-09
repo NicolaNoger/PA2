@@ -11,7 +11,10 @@ from pointnet2.models.pointnet2_ssg_sem import PointNet2SemSegSSG
 class PointNet2SemSegMSG(PointNet2SemSegSSG):
     def _build_model(self):
         self.SA_modules = nn.ModuleList()
-        c_in = 6
+        # c_in should be number of ADDITIONAL features (not including XYZ)
+        # When use_xyz=True, XYZ coordinates are automatically added by the SA modules
+        # We have: Intensity, ReturnNumber, NumberOfReturns, ScanAngle = 4 features
+        c_in = 4
         self.SA_modules.append(
             PointnetSAModuleMSG(
                 npoint=1024,
@@ -60,7 +63,8 @@ class PointNet2SemSegMSG(PointNet2SemSegSSG):
         c_out_3 = 512 + 512
 
         self.FP_modules = nn.ModuleList()
-        self.FP_modules.append(PointnetFPModule(mlp=[256 + 6, 128, 128]))
+        # First FP module: concat FP output (256 channels) + original features (4 channels)
+        self.FP_modules.append(PointnetFPModule(mlp=[256 + 4, 128, 128]))
         self.FP_modules.append(PointnetFPModule(mlp=[512 + c_out_0, 256, 256]))
         self.FP_modules.append(PointnetFPModule(mlp=[512 + c_out_1, 512, 512]))
         self.FP_modules.append(PointnetFPModule(mlp=[c_out_3 + c_out_2, 512, 512]))
@@ -70,5 +74,5 @@ class PointNet2SemSegMSG(PointNet2SemSegSSG):
             nn.BatchNorm1d(128),
             nn.ReLU(True),
             nn.Dropout(0.5),
-            nn.Conv1d(128, 13, kernel_size=1),
+            nn.Conv1d(128, 5, kernel_size=1),  # Changed from 13 to 5 classes
         )

@@ -51,7 +51,7 @@ class FurthestPointSampling(Function):
         torch.Tensor
             (B, npoint) tensor containing the set
         """
-        print("  SA xyz.device =", xyz.device)
+        # Debug print removed for cleaner output
         out = _ext.furthest_point_sampling(xyz, npoint)
 
         ctx.mark_non_differentiable(out)

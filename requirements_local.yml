@@ -9,4 +9,6 @@ dependencies:
   - rasterio
   - numpy
   - matplotlib
+  - laspy 
+  - geopandas
 

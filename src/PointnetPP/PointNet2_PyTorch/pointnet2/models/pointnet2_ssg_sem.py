@@ -11,12 +11,15 @@ from pointnet2.models.pointnet2_ssg_cls import PointNet2ClassificationSSG
 class PointNet2SemSegSSG(PointNet2ClassificationSSG):
     def _build_model(self):
         self.SA_modules = nn.ModuleList()
+        # c_in should be number of ADDITIONAL features (not including XYZ)
+        # When use_xyz=True, XYZ coordinates are automatically added by the SA modules
+        # We have: Intensity, ReturnNumber, NumberOfReturns, ScanAngle = 4 features
         self.SA_modules.append(
             PointnetSAModule(
                 npoint=1024,
                 radius=0.1,
                 nsample=32,
-                mlp=[3, 32, 32, 64],
+                mlp=[4, 32, 32, 64],
                 use_xyz=self.hparams["model.use_xyz"],
             )
         )
@@ -49,7 +52,8 @@ class PointNet2SemSegSSG(PointNet2ClassificationSSG):
         )
 
         self.FP_modules = nn.ModuleList()
-        self.FP_modules.append(PointnetFPModule(mlp=[128 + 3, 128, 128, 128]))
+        # First FP module concatenates: 128 (from FP1 output) + 4 (original features)
+        self.FP_modules.append(PointnetFPModule(mlp=[128 + 4, 128, 128, 128]))
         self.FP_modules.append(PointnetFPModule(mlp=[256 + 64, 256, 128]))
         self.FP_modules.append(PointnetFPModule(mlp=[256 + 128, 256, 256]))
         self.FP_modules.append(PointnetFPModule(mlp=[512 + 256, 256, 256]))
@@ -59,7 +63,7 @@ class PointNet2SemSegSSG(PointNet2ClassificationSSG):
             nn.BatchNorm1d(128),
             nn.ReLU(True),
             nn.Dropout(0.5),
-            nn.Conv1d(128, 13, kernel_size=1),
+            nn.Conv1d(128, 5, kernel_size=1),  # Changed from 13 to 5 classes
         )
 
     def forward(self, pointcloud):

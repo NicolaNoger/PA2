@@ -1,0 +1,10 @@
+# ninja log v7
+3	20956	1764349583000000000	/cfs/earth/scratch/nogernic/PA2/src/PointnetPP/PointNet2_PyTorch/pointnet2_ops_lib/build/temp.linux-x86_64-3.9/pointnet2_ops/_ext-src/src/group_points.o	e736bb4cb39907f0
+2	21504	1764349583000000000	/cfs/earth/scratch/nogernic/PA2/src/PointnetPP/PointNet2_PyTorch/pointnet2_ops_lib/build/temp.linux-x86_64-3.9/pointnet2_ops/_ext-src/src/ball_query.o	dec6a647738c89b6
+2	22064	1764349583000000000	/cfs/earth/scratch/nogernic/PA2/src/PointnetPP/PointNet2_PyTorch/pointnet2_ops_lib/build/temp.linux-x86_64-3.9/pointnet2_ops/_ext-src/src/bindings.o	28cb2017879dccaa
+3	23355	1764349583000000000	/cfs/earth/scratch/nogernic/PA2/src/PointnetPP/PointNet2_PyTorch/pointnet2_ops_lib/build/temp.linux-x86_64-3.9/pointnet2_ops/_ext-src/src/interpolate.o	5ecb8f2600805fc1
+4	24137	1764349583000000000	/cfs/earth/scratch/nogernic/PA2/src/PointnetPP/PointNet2_PyTorch/pointnet2_ops_lib/build/temp.linux-x86_64-3.9/pointnet2_ops/_ext-src/src/sampling.o	e8f0d1ea802ed8ca
+2	57746	1764349583000000000	/cfs/earth/scratch/nogernic/PA2/src/PointnetPP/PointNet2_PyTorch/pointnet2_ops_lib/build/temp.linux-x86_64-3.9/pointnet2_ops/_ext-src/src/ball_query_gpu.o	a1af83268735c33a
+3	57787	1764349583000000000	/cfs/earth/scratch/nogernic/PA2/src/PointnetPP/PointNet2_PyTorch/pointnet2_ops_lib/build/temp.linux-x86_64-3.9/pointnet2_ops/_ext-src/src/interpolate_gpu.o	fff14c0e73c0c1ae
+3	57940	1764349583000000000	/cfs/earth/scratch/nogernic/PA2/src/PointnetPP/PointNet2_PyTorch/pointnet2_ops_lib/build/temp.linux-x86_64-3.9/pointnet2_ops/_ext-src/src/group_points_gpu.o	7af76b59a87c03ec
+4	58816	1764349583000000000	/cfs/earth/scratch/nogernic/PA2/src/PointnetPP/PointNet2_PyTorch/pointnet2_ops_lib/build/temp.linux-x86_64-3.9/pointnet2_ops/_ext-src/src/sampling_gpu.o	c8f1f8391d47c7c8

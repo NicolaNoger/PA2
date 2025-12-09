@@ -6,6 +6,6 @@ optimizer:
     bnm_decay: 0.5
     decay_step: 3e5
 
-num_points: 4096
+num_points: 16384  # Your tile size
 epochs: 50
-batch_size: 24
+batch_size: 24   # can try up to 32
