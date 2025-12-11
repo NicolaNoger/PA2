@@ -198,46 +198,9 @@ class PointNet2AerialSSG(nn.Module):
         return self.fc_layer(l_features[0])
 
 
-def print_architecture_comparison():
-    """Print comparison of architectures"""
-    print("\n" + "="*80)
-    print("ARCHITECTURE COMPARISON: Indoor vs Aerial Optimized")
-    print("="*80)
-    
-    print("\n📏 Spatial Scale:")
-    print("  Indoor tiles:  ~1x1m rooms")
-    print("  Aerial tiles:  25x25m outdoor areas")
-    print("  Scale factor:  25x larger!")
-    
-    print("\n🔍 Set Abstraction Layers:")
-    print("  Layer | Indoor (SSG)      | Aerial Optimized   | Purpose")
-    print("  ------|-------------------|--------------------|-----------------")
-    print("  SA1   | r=0.1m, n=1024    | r=1.0m, n=2048    | Fine details")
-    print("  SA2   | r=0.2m, n=256     | r=2.5m, n=512     | Local patterns")
-    print("  SA3   | r=0.4m, n=64      | r=5.0m, n=128     | Medium context")
-    print("  SA4   | r=0.8m, n=16      | r=10.0m, n=32     | Global context")
-    
-    print("\n📊 Sampling Density:")
-    print("  Indoor:   64-128 samples per layer")
-    print("  Aerial:   24-64 samples per layer (denser point clouds)")
-    
-    print("\n🎯 Improvements:")
-    print("  ✅ Radii scaled 10x for outdoor scenes")
-    print("  ✅ More points in early layers (2048 vs 1024)")
-    print("  ✅ Dice Loss for boundary optimization")
-    print("  ✅ Dropout 0.6 (vs 0.5) for better generalization")
-    print("  ✅ Lower weight decay (5e-5 vs 1e-4)")
-    
-    print("\n📈 Expected Improvements:")
-    print("  • Better spatial context (buildings, large trees)")
-    print("  • Sharper boundaries (building edges)")
-    print("  • Better small region detection (water bodies)")
-    print("  • +2-3% overall accuracy expected")
-    print("="*80 + "\n")
 
 
 if __name__ == "__main__":
-    print_architecture_comparison()
     
     # Test model
     print("Testing model instantiation...")
@@ -247,14 +210,14 @@ if __name__ == "__main__":
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
-    print(f"✅ Model created successfully")
+    print(f"Model created successfully")
     print(f"   Total parameters: {total_params:,}")
     print(f"   Trainable parameters: {trainable_params:,}")
     
     # Test forward pass
     dummy_input = torch.randn(2, 16384, 7)  # (B, N, 3+4)
     output = model(dummy_input)
-    print(f"✅ Forward pass successful")
+    print(f"Forward pass successful")
     print(f"   Input shape:  {dummy_input.shape}")
     print(f"   Output shape: {output.shape}")
     
@@ -262,6 +225,6 @@ if __name__ == "__main__":
     dice_loss = DiceLoss()
     dummy_targets = torch.randint(0, 5, (2, 16384))
     loss = dice_loss(output, dummy_targets)
-    print(f"✅ Dice Loss computed: {loss.item():.4f}")
+    print(f"Dice Loss computed: {loss.item():.4f}")
     
-    print("\n✨ All tests passed! Ready for training.")
+    print("\n All tests passed! Ready for training.")

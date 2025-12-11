@@ -1,6 +1,18 @@
-﻿.venv/
+﻿# Python
+.venv/
 __pycache__/
+*.pyc
+*.pyo
+
 *.log
+lightning_logs/
+
+# Build artifacts
+*.o
+*.so
+
 /data/
 /models/
 /Organisation/
+/archive/
+

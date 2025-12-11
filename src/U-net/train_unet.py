@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 import matplotlib
-matplotlib.use('Agg')  # Non-interactive backend for servers without display
+matplotlib.use('Agg') 
 
 try:
     from sklearn.metrics import confusion_matrix, classification_report, f1_score
@@ -15,7 +15,6 @@ except (ImportError, TypeError) as e:
     SKLEARN_AVAILABLE = False
 
 
-# Importiere deine Module
 from U_net import build_unet
 from dataloader import load_npy_dataset, prepare_dataset
 
@@ -56,12 +55,12 @@ class Config:
     VALIDATION_STEPS = None
     
     # Loss Function Selection
-    USE_FOCAL_LOSS = True # ← Behalte Focal Loss (zeigt gute Ergebnisse für Class 3!)
-    FOCAL_GAMMA = 2.0       # Focal Loss parameter: focusing parameter (0 = CE, 2+ = focus on hard examples)
-    FOCAL_ALPHA = 0.25      # Focal Loss parameter: class balancing (0.25 works well for imbalanced data)
+    USE_FOCAL_LOSS = True 
+    FOCAL_GAMMA = 2.0      
+    FOCAL_ALPHA = 0.25    
     
     # Checkpoint Loading (set to load from existing model)
-    LOAD_CHECKPOINT = "models/unet_20251123_102027/best_model_weights/checkpoint"  # ← Gutes Basis-Model
+    LOAD_CHECKPOINT = "models/unet_20251123_102027/best_model_weights/checkpoint"  
     RESUME_TRAINING = False  # ← False = Fine-tuning mode
 
 
@@ -88,7 +87,7 @@ def load_data():
     print(f"Total Samples: {total_samples}")
     
     # Shuffle dataset before splitting (with fixed seed for reproducibility)
-    # Use buffer size of 1000 to avoid OOM (shuffling happens in memory)
+    # Use buffer size of 1000 to avoid OOM
     print("\nShuffling dataset with seed=42 for reproducible random split...")
     BUFFER_SIZE = 1000  # Good balance: enough randomness, won't cause OOM
     dataset = dataset.shuffle(BUFFER_SIZE, seed=42, reshuffle_each_iteration=False)
@@ -114,13 +113,13 @@ def load_data():
     print(f"Validation Samples: {val_size} ({val_size/total_samples*100:.1f}%)")
     print(f"Test Samples:       {test_size} ({test_size/total_samples*100:.1f}%)")
     
-    # 3. Berechne Steps für Training
+    # 3. calculate Steps for training
     Config.STEPS_PER_EPOCH = max(1, train_size // Config.BATCH_SIZE)
     Config.VALIDATION_STEPS = min(100, max(1, val_size // Config.BATCH_SIZE))
     print(f"Steps per Epoch:    {Config.STEPS_PER_EPOCH}")
     print(f"Validation Steps:   {Config.VALIDATION_STEPS} (limited to save memory)")
     
-    # 4. Prepare Datasets (with Batching, Augmentation, etc.)
+    # 4. Prepare Datasets
     print("\nPreparing Training Dataset...")
     train_batches = prepare_dataset(
         train_dataset, 
@@ -166,14 +165,14 @@ def focal_loss(gamma=2.0, alpha=0.25):
     Focal Loss for multi-class classification.
     
     Focal Loss focuses training on hard examples by down-weighting easy examples.
-    This is especially useful for class imbalance problems.
+    useful for class imbalance problems.
     
     Formula: FL(pt) = -alpha * (1-pt)^gamma * log(pt)
     
     Args:
         gamma: Focusing parameter. Higher values focus more on hard examples.
                - gamma=0: equivalent to categorical crossentropy
-               - gamma=2: commonly used default
+               - gamma=2: default
                - gamma=5: very strong focus on hard examples
         alpha: Class balancing parameter (0-1). Lower values give less weight to well-classified examples.
     
@@ -234,7 +233,7 @@ def build_model():
         loss_fn = focal_loss(gamma=Config.FOCAL_GAMMA, alpha=Config.FOCAL_ALPHA)
         loss_name = f"Focal Loss (gamma={Config.FOCAL_GAMMA}, alpha={Config.FOCAL_ALPHA})"
         print(f"Loss Function: {loss_name}")
-        print("  → Focuses on hard-to-classify examples (good for Class 3 & 4!)")
+        print("  → Focuses on hard-to-classify examples")
     else:
         loss_fn = 'categorical_crossentropy'
         loss_name = "Categorical Crossentropy"
@@ -259,7 +258,7 @@ def build_model():
         print("-" * 70)
         try:
             model.load_weights(Config.LOAD_CHECKPOINT)
-            print(f"✓ Loaded weights from: {Config.LOAD_CHECKPOINT}")
+            print(f"Loaded weights from: {Config.LOAD_CHECKPOINT}")
             
             if Config.RESUME_TRAINING:
                 print("  Mode: RESUME TRAINING (continuing from checkpoint)")
@@ -268,7 +267,7 @@ def build_model():
                 print("  Mode: FINE-TUNING (using pretrained weights)")
                 print("  Tip: You can change hyperparameters for fine-tuning")
         except Exception as e:
-            print(f"⚠ ERROR: Could not load checkpoint: {e}")
+            print(f"ERROR: Could not load checkpoint: {e}")
             print("  Starting training from scratch instead")
     else:
         print("\nNo checkpoint specified - training from scratch")
@@ -297,8 +296,6 @@ def setup_callbacks(output_dir):
         def on_epoch_end(self, epoch, logs=None):
             import gc
             gc.collect()
-            # Don't clear_session as it would reset the model!
-            # Just force garbage collection
     
     callbacks.append(MemoryCleanupCallback())
     print("MemoryCleanupCallback: Forces garbage collection after each epoch")
@@ -412,11 +409,11 @@ def plot_training_history(history, output_dir):
         history_df = pd.DataFrame(history.history)
         csv_path = os.path.join(output_dir, "training_history_detailed.csv")
         history_df.to_csv(csv_path, index_label='epoch')
-        print(f"✓ Training history saved as CSV: {csv_path}")
+        print(f"Training history saved as CSV: {csv_path}")
     except Exception as e:
         print(f"Warning: Could not save history as CSV: {e}")
     
-    # Try to plot (but don't fail if matplotlib has issues)
+    # Try to plot
     try:
         # Disable matplotlib completely if environment variable set
         import os as os_module
@@ -442,7 +439,7 @@ def plot_training_history(history, output_dir):
             print(f"Final Validation Accuracy: {val_acc[-1]:.4f}")
             print(f"Best Validation Accuracy:  {max(val_acc):.4f} (Epoch {val_acc.index(max(val_acc))+1})")
         
-        print("\n✓ Training history available in CSV file for plotting")
+        print("\n Training history available in CSV file for plotting")
         print("  You can plot it later with: pandas.read_csv('training_history_detailed.csv')")
         
     except Exception as e:
@@ -468,7 +465,7 @@ def visualize_predictions(model, val_batches, output_dir, num_samples=3):
             true_masks = np.argmax(masks_np, axis=-1)
             pred_masks = np.argmax(predictions_np, axis=-1)
             
-            # Save first num_samples as numpy files (can be visualized later)
+            # Save first num_samples as numpy files 
             for i in range(min(num_samples, images_np.shape[0])):
                 sample_dir = os.path.join(output_dir, f"prediction_sample_{i+1}")
                 os.makedirs(sample_dir, exist_ok=True)
@@ -497,7 +494,7 @@ def visualize_predictions(model, val_batches, output_dir, num_samples=3):
                         percentage = count / pred_masks[i].size * 100
                         f.write(f"  Class {class_id}: {count:7d} pixels ({percentage:5.2f}%)\n")
                 
-                print(f"✓ Sample {i+1} saved: {sample_dir}/")
+                print(f" Sample {i+1} saved: {sample_dir}/")
             
             print("\nNote: Raw prediction data saved as .npy files")
             print("      You can visualize them later with matplotlib/QGIS")
@@ -554,7 +551,7 @@ def evaluate_model(model, val_batches, output_dir):
                             index=[f'True_{i}' for i in range(Config.NUM_CLASSES)],
                             columns=[f'Pred_{i}' for i in range(Config.NUM_CLASSES)])
         cm_df.to_csv(cm_csv_path)
-        print(f"✓ Confusion matrix saved as CSV: {cm_csv_path}")
+        print(f" Confusion matrix saved as CSV: {cm_csv_path}")
         
         # Print confusion matrix to console
         print("\nConfusion Matrix:")
@@ -588,7 +585,7 @@ def evaluate_model(model, val_batches, output_dir):
         f.write("CLASSIFICATION REPORT\n")
         f.write("="*70 + "\n")
         f.write(report)
-    print(f"✓ Classification report saved: {report_path}")
+    print(f" Classification report saved: {report_path}")
     
     # 3. F1 Scores
     print("\n" + "="*70)
@@ -618,7 +615,7 @@ def evaluate_model(model, val_batches, output_dir):
             f.write(f"  Class {i}: {f1:.4f}\n")
         f.write(f"\nMacro-averaged F1:    {f1_macro:.4f}\n")
         f.write(f"Weighted-averaged F1: {f1_weighted:.4f}\n")
-    print(f"✓ F1 scores saved: {f1_path}")
+    print(f" F1 scores saved: {f1_path}")
     
     print("="*70)
 
@@ -632,21 +629,20 @@ def save_model(model, output_dir):
     weights_path = os.path.join(output_dir, "final_model_weights.h5")
     try:
         model.save_weights(weights_path)
-        print(f"✓ Model weights saved: {weights_path}")
+        print(f" Model weights saved: {weights_path}")
     except Exception as e:
         print(f"Warning: Could not save weights as .h5: {e}")
         weights_path_tf = os.path.join(output_dir, "final_model_weights")
         model.save_weights(weights_path_tf)
-        print(f"✓ Model weights saved: {weights_path_tf} (TF format)")
+        print(f" Model weights saved: {weights_path_tf} (TF format)")
     
     # Try to save complete model (SavedModel format)
     model_path = os.path.join(output_dir, "final_model")
     try:
         model.save(model_path, save_format='tf')
-        print(f"✓ Complete model saved: {model_path} (SavedModel format)")
+        print(f" Complete model saved: {model_path} (SavedModel format)")
     except Exception as e:
         print(f"Warning: Could not save complete model: {e}")
-        print("   This is OK - you can load the model using weights file.")
         print(f"   To load: model = build_unet(...); model.load_weights('{weights_path}')")
 
 
@@ -680,7 +676,6 @@ def main():
         print("\n" + "="*70)
         print("FINAL EVALUATION ON TEST SET")
         print("="*70)
-        print("This is the TRUE performance on completely unseen data!")
         evaluate_model(model, test_batches, output_dir)
         visualize_predictions(model, test_batches, output_dir, num_samples=3)
         
@@ -688,7 +683,7 @@ def main():
         save_model(model, output_dir)
         
         print("\n" + "="*70)
-        print("✓ TRAINING SUCCESSFUL!")
+        print(" TRAINING SUCCESSFUL!")
         print("="*70)
         print(f"All files saved in: {output_dir}")
         print(f"Finished: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

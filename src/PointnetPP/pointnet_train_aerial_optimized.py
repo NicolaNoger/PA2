@@ -4,13 +4,9 @@ PointNet++ Training Script - AERIAL OPTIMIZED (V3)
 ===================================================
 
 Major architectural improvements for 25x25m outdoor tiles:
-✅ Radii scaled 10x (1.0m-10.0m vs 0.1m-0.8m indoor)
-✅ More sampling points (2048 vs 1024 in SA1)
-✅ Dice Loss + Focal Loss combination
-✅ Higher dropout (0.6 vs 0.5)
-✅ Lower weight decay (5e-5 vs 1e-4)
-
-Expected: +2-3% accuracy improvement over V2
+ Radii scaled 10x (1.0m-10.0m vs 0.1m-0.8m indoor)
+ More sampling points (2048 vs 1024 in SA1)
+ Dice Loss + Focal Loss combination
 """
 
 import os
@@ -92,13 +88,13 @@ class AerialOptimizedConfig:
     
     # Architecture
     USE_XYZ = True
-    DROPOUT = 0.6  # Increased from 0.5
+    DROPOUT = 0.6  
     
     # Training
     BATCH_SIZE = 24
     MAX_EPOCHS = 50
     LEARNING_RATE = 1e-3
-    WEIGHT_DECAY = 5e-5  # Reduced from 1e-4
+    WEIGHT_DECAY = 5e-5  
     
     NUM_WORKERS = 4
     PIN_MEMORY = True
@@ -115,8 +111,8 @@ class AerialOptimizedConfig:
     USE_FOCAL_LOSS = True
     FOCAL_GAMMA = 2.0
     
-    USE_DICE_LOSS = True  # NEW!
-    DICE_WEIGHT = 0.2     # Weight for Dice Loss
+    USE_DICE_LOSS = True  
+    DICE_WEIGHT = 0.2     
     
     # Optimized class weights (from Advanced V2)
     CLASS_WEIGHTS = [2.0, 0.6, 0.2, 0.4, 0.45]  # [Water, Tree, LowVeg, Impervious, Buildings]
@@ -160,8 +156,6 @@ class PointNet2AerialOptimized(pl.LightningModule):
         print("="*80)
         print(f"Radii: 1.0m, 2.5m, 5.0m, 10.0m (vs 0.1-0.8m indoor)")
         print(f"Sampling: 2048, 512, 128, 32 points")
-        print(f"Dropout: {config.DROPOUT} (increased from 0.5)")
-        print(f"Weight Decay: {config.WEIGHT_DECAY} (reduced from 1e-4)")
         print("="*80 + "\n")
         
         # Setup losses
@@ -187,18 +181,18 @@ class PointNet2AerialOptimized(pl.LightningModule):
                 gamma=self.config.FOCAL_GAMMA,
                 alpha=class_weights
             )
-            print(f"✓ Focal Loss (gamma={self.config.FOCAL_GAMMA})")
+            print(f" Focal Loss (gamma={self.config.FOCAL_GAMMA})")
         else:
             self.focal_loss = None
         
-        # Dice Loss (NEW!)
+        # Dice Loss 
         if self.config.USE_DICE_LOSS:
             self.dice_loss = DiceLoss()
-            print(f"✓ Dice Loss (weight={self.config.DICE_WEIGHT})")
+            print(f" Dice Loss (weight={self.config.DICE_WEIGHT})")
         else:
             self.dice_loss = None
         
-        print(f"✓ Class Weights: {self.config.CLASS_WEIGHTS}\n")
+        print(f" Class Weights: {self.config.CLASS_WEIGHTS}\n")
     
     def forward(self, x):
         """Forward pass"""
@@ -390,7 +384,7 @@ def evaluate_on_test_set(model, test_loader, config):
     fig.tight_layout()
     fig.savefig(cm_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
-    print(f"\n✓ Confusion matrix saved: {cm_path}")
+    print(f"\n Confusion matrix saved: {cm_path}")
     
     # Save results
     results_path = os.path.join(config.OUTPUT_DIR, 'test_results_aerial_optimized.txt')
@@ -405,7 +399,7 @@ def evaluate_on_test_set(model, test_loader, config):
         for i, (name, f1) in enumerate(zip(class_names, f1_per_class)):
             f.write(f"  Class {i} ({name:20s}): {f1:.4f}\n")
         f.write("\n" + report)
-    print(f"✓ Results saved: {results_path}")
+    print(f" Results saved: {results_path}")
     
     print("="*80)
 
@@ -436,9 +430,9 @@ def train_aerial_optimized():
     
     # CUDA check
     if not torch.cuda.is_available():
-        print("\n⚠️  WARNING: CUDA not available!")
+        print("\n WARNING: CUDA not available!")
         return
-    print(f"\n✓ CUDA: {torch.cuda.get_device_name(0)}\n")
+    print(f"\n CUDA: {torch.cuda.get_device_name(0)}\n")
     
     # Setup augmentation
     train_transform = None
@@ -448,7 +442,7 @@ def train_aerial_optimized():
             RandomJitter(sigma=config.AUG_JITTER_SIGMA, clip=config.AUG_JITTER_CLIP),
             RandomScale(scale_low=config.AUG_SCALE_MIN, scale_high=config.AUG_SCALE_MAX)
         ])
-        print("✓ Data augmentation enabled\n")
+        print(" Data augmentation enabled\n")
     
     # Load data
     print("Loading data...")
@@ -460,7 +454,7 @@ def train_aerial_optimized():
         train_transform=train_transform
     )
     
-    print("✓ Data loaded:")
+    print(" Data loaded:")
     print(f"  Train: {len(train_loader.dataset)} tiles ({len(train_loader)} batches)")
     print(f"  Val:   {len(val_loader.dataset)} tiles ({len(val_loader)} batches)")
     print(f"  Test:  {len(test_loader.dataset)} tiles ({len(test_loader)} batches)")
@@ -507,7 +501,7 @@ def train_aerial_optimized():
         'optimizer_state_dict': trainer.optimizers[0].state_dict(),
         'config': config,
     }, final_path)
-    print(f"✓ Model saved to: {final_path}")
+    print(f" Model saved to: {final_path}")
     
     # Test evaluation
     evaluate_on_test_set(model, test_loader, config)

@@ -28,6 +28,6 @@ cd /cfs/earth/scratch/nogernic/PA2/src/U-net
 conda activate unet_gpu        
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH" #without this it does not work, does not find libcudart.so so also no GPU
 
-dos2unix train.py
+dos2unix train_unet.py
 
-python train.py
+python train_unet.py

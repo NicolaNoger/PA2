@@ -3,11 +3,11 @@ import tensorflow as tf
 import os
 
 # =============================================================================
-# SCHRITT 2: DATALOADER (dataloader.py)
+# DATALOADER (dataloader.py)
 # =============================================================================
-# Dieser Script lädt die vorbereiteten .npy Dateien und erstellt TensorFlow Datasets
-# Input:  .npy Dateien aus img_tiles/ und mask_tiles/
-# Output: tf.data.Dataset Objekte für Training und Validation
+# This script loads the prepared .npy files and creates TensorFlow Datasets
+# Input:  .npy files from img_tiles/ and mask_tiles/
+# Output: tf.data.Dataset objects for training and validation
 # =============================================================================
 
 class Augment(tf.keras.layers.Layer):

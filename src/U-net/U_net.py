@@ -91,7 +91,7 @@ def create_mobilenet_encoder(input_shape=(512, 512, 4), trainable=False):
                 first_conv.set_weights([extended_kernel])
             transferred += 1
         
-        print(f"✓ Successfully transferred weights from {transferred} layers")
+        print(f"Successfully transferred weights from {transferred} layers")
         
     except Exception as e:
         print(f"  Warning: Could not load ImageNet weights: {e}")
@@ -154,9 +154,6 @@ def build_unet(input_shape=(512, 512, 4), num_classes=5, use_modified_weights=Tr
     # Build decoder
     inp = tf.keras.layers.Input(shape=input_shape)
     skip_connections = encoder(inp)
-    
-    # Skip connections: [256x256, 128x128, 64x64, 32x32, 16x16, 16x16 (bottleneck)]
-    # Decoder needs to go: 16x16 → 32x32 → 64x64 → 128x128 → 256x256 → 512x512
     
     # Start from bottleneck
     x = skip_connections[-1]  # 16x16x1280

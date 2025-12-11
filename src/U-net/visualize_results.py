@@ -13,8 +13,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Confusion matrix from latest training (unet_20251124_213513)
-# You can update this with values from your latest training output
+# Hardcoded confusion matrix (if CSV not available)
 CONFUSION_MATRIX = np.array([[18038607, 83043, 201078, 191337, 31866],
  [214, 14397959, 9164579, 63157, 12304],
  [6029, 1568442, 38866533, 1081511, 1214712],
@@ -59,7 +58,7 @@ def plot_training_history(csv_path, output_path):
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"✓ Plot saved: {output_path}")
+    print(f" Plot saved: {output_path}")
     plt.close()
 
 
@@ -94,7 +93,7 @@ def plot_confusion_matrix(csv_path, output_path, use_hardcoded=False):
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"✓ Plot saved: {output_path}")
+    print(f" Plot saved: {output_path}")
     plt.close()
 
 
@@ -135,7 +134,7 @@ def visualize_predictions(sample_dir, output_path):
     
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    print(f"✓ Plot saved: {output_path}")
+    print(f" Plot saved: {output_path}")
     plt.close()
 
 
@@ -179,7 +178,7 @@ def main():
             print(f"Warning: {sample_dir} not found, skipping sample {i}")
     
     print("\n" + "="*70)
-    print("✓ VISUALIZATION COMPLETE!")
+    print(" VISUALIZATION COMPLETE!")
     print("="*70)
 
 
